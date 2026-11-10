@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>RabbitMQ for a Laravel e-commerce app</title>
+<link rel="stylesheet" href="assets/course.css"></head>
+<body><main>
+<p class="kicker">A short course</p>
+<h1>RabbitMQ in a Laravel e-commerce app</h1>
+<p>Built for one job: walking into an interview at a company that runs a Laravel shop selling electronics, uses RabbitMQ behind it, and is experimenting with AI tools, and being able to explain how the pieces fit, why they were chosen, and where they break.</p>
+<div class="win"><strong>The path is sequential.</strong> Each lesson uses only ideas from the lessons before it, takes about 12 to 15 minutes, and ends with practice you answer from memory.</div>
+<h2>Lessons</h2>
+<ol class="path" id="path"></ol>
+<noscript><p>Enable JavaScript to see the lesson list.</p></noscript>
+<h2>Reference</h2>
+<ul><li><a href="reference/message-path.html">The path of one message</a>: one-page cheat sheet, grows with each lesson.</li></ul>
+<h2>Stuck?</h2>
+<p>Ask your teacher (the agent that built this course) about anything unclear, or ask for the next lesson when you are ready.</p>
+</main>
+<script src="assets/lessons.js"></script>
+<script>
+  var ol = document.getElementById('path');
+  (window.LESSONS || []).forEach(function(l){
+    var li = document.createElement('li'); li.className = l.status;
+    li.innerHTML = (l.status === 'ready' ? '<a href="lessons/' + l.slug + '.html"><strong>' + l.title + '</strong></a>' : '<strong>' + l.title + '</strong> <span class="tag">coming soon</span>') + '<p>' + l.blurb + ' <span class="min">' + l.minutes + ' min</span></p>';
+    ol.appendChild(li);
+  });
+</script>
+</body></html>

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lesson 1: Why a checkout needs a queue</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Lesson 1 &middot; about 12 minutes</p>
+<h1>Why a checkout needs a queue</h1>
+<div class="win"><strong>Your win:</strong> look at an order-placed flow, say which steps stay in the web request and which move behind a queue, and trace one message from Laravel to a worker using the four RabbitMQ nouns.</div>
+
+<h2>1. The problem: a checkout that does everything</h2>
+<p>Imagine the electronics shop's "Pay" button. Behind it, the app has to do a lot of things. Done one after another inside the web request, the customer waits for all of them.</p>
+<pre class="mermaid">
+flowchart LR
+  A["Customer<br/>clicks Pay"] --> B["Authorise<br/>card"] --> C["Save<br/>order"] --> D["Send receipt<br/>email"] --> E["Sync stock to<br/>warehouse system"] --> F["Update<br/>analytics"] --> G["Show 'Order<br/>confirmed'"]
+  classDef slow stroke-dasharray: 4 3
+  class D,E,F slow
+</pre>
+<p>The dashed steps depend on other services (a mail provider, a warehouse API) that can be slow or down. Laravel's own documentation describes exactly this situation: tasks that take too long for a normal web request are moved to a queue so the application can respond quickly (<a href="https://laravel.com/docs/queues">Laravel: Queues</a>).</p>
+<p>The customer needs to know one thing before the confirmation page: did my payment work? The receipt, the warehouse sync and the analytics can happen a few seconds later. That is usually where the line is drawn, though it is a design decision, not a law.</p>
+
+<h2>2. The idea: leave a note, let someone else do it</h2>
+<p>A queue is a to-do list sitting between two programs. The web request writes a note ("fulfil order 1042") and returns immediately. A separate long-running program, a <strong>worker</strong>, picks notes up and does the slow work.</p>
+<pre class="mermaid">
+flowchart LR
+  W["Web request<br/>(Laravel)"] -- "writes a note" --> Q[["Queue"]] -- "picked up later" --> K["Worker<br/>(separate process)"]
+</pre>
+<p>In Laravel the note is a <em>job</em> class. Dispatching it puts it on a queue; a worker started with <code>php artisan queue:work</code> runs it (<a href="https://laravel.com/docs/queues">Laravel: Queues</a>).</p>
+<pre>// in the checkout controller, after payment succeeds
+$order = Order::create([...]);
+
+FulfilOrder::dispatch($order)-&gt;onQueue('fulfilment');
+
+return redirect()-&gt;route('orders.thanks', $order);
+
+// app/Jobs/FulfilOrder.php
+class FulfilOrder implements ShouldQueue
+{
+    use Queueable;
+    public function __construct(public Order $order) {}
+    public function handle(WarehouseClient $warehouse): void { /* email, stock sync */ }
+}</pre>
+<p class="note">When a job takes an Eloquent model, only the model's identifier is serialized onto the queue; the worker re-fetches the model when it runs (<a href="https://laravel.com/docs/master/queues">Laravel docs</a>). So the note says "order 1042", not a copy of the order.</p>
+
+<h2>3. Enter RabbitMQ: who holds the notes?</h2>
+<p>Something has to store the notes safely between the web request and the worker. Laravel can use a database table or Redis for this. This company uses <strong>RabbitMQ</strong>, a message broker: a server whose whole job is to accept messages, route them and hold them until a worker takes them. It has four nouns. We add them one at a time.</p>
+<table>
+<tr><th>Noun</th><th>Plain meaning</th><th>In the shop</th></tr>
+<tr><td><strong>Publisher</strong></td><td>Program that sends a message</td><td>The Laravel web app, at checkout</td></tr>
+<tr><td><strong>Exchange</strong></td><td>Where messages arrive; it decides where they go</td><td>A router for order events</td></tr>
+<tr><td><strong>Queue</strong></td><td>Holds messages until someone takes them</td><td>One per kind of work, e.g. fulfilment</td></tr>
+<tr><td><strong>Consumer</strong></td><td>Program that receives and handles a message</td><td>The Laravel worker</td></tr>
+</table>
+<p>The surprising one is the exchange. A publisher does not put messages straight into a queue. In the AMQP 0-9-1 model RabbitMQ uses, messages are published to exchanges, and exchanges distribute copies to queues using rules called <strong>bindings</strong> (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">RabbitMQ: AMQP 0-9-1 Model Explained</a>). A binding is the rule that says "this queue wants messages from this exchange".</p>
+<pre class="mermaid">
+flowchart LR
+  P["Publisher<br/>Laravel web app"] -- "order placed" --> X{{"Exchange"}}
+  X -- "binding" --> Q1[["fulfilment queue"]]
+  X -- "binding" --> Q2[["email queue"]]
+  Q1 --> C1["Fulfilment worker"]
+  Q2 --> C2["Email worker"]
+</pre>
+<p>Which queues receive a message depends on the exchange type and the bindings; that is Lesson 2. If a message matches no queue at all, it is either dropped or returned to the publisher, depending on options the publisher set (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">same guide</a>).</p>
+<p>One wrinkle you may meet: it can look like you publish straight to a queue. RabbitMQ has a nameless default exchange; every declared queue is automatically bound to it using the queue's name as the routing key. So publishing "to a queue" is really publishing through that exchange (<a href="https://www.rabbitmq.com/docs/exchanges">RabbitMQ: Exchanges</a>).</p>
+
+<h2>4. Where Laravel fits</h2>
+<p>A community-maintained driver, <a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">vladimir-yuldashev/laravel-queue-rabbitmq</a>, lets Laravel use RabbitMQ as a queue connection. Its README says that once configured you use Laravel's normal queue API, so the <code>dispatch()</code> call above does not change. Exactly which exchange and routing key it uses by default is something we will check in the driver's documentation in Lesson 3 rather than assume. I cannot tell from here whether your target company uses this driver or another one; that is a good interview question.</p>
+
+<h2>5. Practice: answer from memory</h2>
+<p>Try each question before you look at the options in your head. Feedback is immediate.</p>
+<div id="quiz"></div>
+<script type="application/json" id="quiz-data">[
+ {"q":"Which checkout step usually must finish inside the web request?","options":["Emailing the customer a receipt","Authorising the card payment now","Telling the warehouse about stock"],"answer":1,"why":"The customer must learn whether payment worked. Receipts and warehouse sync can lag by seconds."},
+ {"q":"In RabbitMQ, where does a publisher send a message?","options":["Directly to a queue","Straight to a consumer","To a named exchange"],"answer":2,"why":"Publishers publish to exchanges. The nameless default exchange only makes it look like a direct-to-queue send."},
+ {"q":"What is a binding in RabbitMQ?","options":["A rule connecting an exchange to queues","A live link between worker and broker","A saved copy of every sent message"],"answer":0,"why":"Bindings are the rules exchanges use to route messages to queues. The worker-to-broker link is a connection."},
+ {"q":"A message reaches an exchange, but no queue is bound. What happens?","options":["The broker retries until bound","It is dropped or returned","It waits for a binding"],"answer":1,"why":"Unroutable messages are dropped or returned to the publisher, depending on options the publisher set."}
+]</script>
+
+<h2>6. Say it out loud</h2>
+<p>Interview prompt: <em>"Why would an e-commerce site put order processing behind a message queue?"</em> Answer in 30 seconds, using the words publisher, exchange, queue and consumer, then open the model answer.</p>
+<details><summary>Model answer</summary>
+<p>"Checkout should only wait for what the customer needs to know, whether the payment worked. Receipts, stock sync and analytics depend on other services and can be slow or fail, so the app publishes a message and returns. RabbitMQ takes the message at an exchange, routes it by bindings into queues, and workers consume from those queues at their own pace. That keeps the checkout fast and means a slow warehouse API does not stall a customer."</p></details>
+
+<h2>Primary source</h2>
+<p>Read the opening sections of <a href="https://www.rabbitmq.com/tutorials/amqp-concepts">AMQP 0-9-1 Model Explained</a> on rabbitmq.com, up to and including bindings. It is the official explanation of the nouns used here.</p>
+<p class="note">Anything unclear? Ask your teacher. Questions like "why not just use Redis?" are exactly the kind worth asking before an interview.</p>
+<p>Cheat sheet: <a href="../reference/message-path.html">The path of one message</a></p>
+<nav class="lesson-nav" data-lesson-nav></nav>
+</main>
+<script src="../assets/lessons.js"></script>
+<script src="../assets/course.js"></script>
+</body></html>

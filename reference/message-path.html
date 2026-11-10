@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reference: the path of one message</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Reference</p>
+<h1>The path of one message</h1>
+<p class="note">Compressed from Lesson 1. Grows as lessons are added.</p>
+<pre class="mermaid">
+flowchart LR
+  P["Publisher<br/>Laravel dispatch()"] --> X{{"Exchange"}}
+  X -- "binding" --> Q[["Queue"]]
+  Q --> C["Consumer<br/>queue:work"]
+</pre>
+<table>
+<tr><th>Noun</th><th>Remember</th></tr>
+<tr><td>Publisher</td><td>Sends to an exchange, never "into" a queue</td></tr>
+<tr><td>Exchange</td><td>Routes by type + bindings to zero or more queues</td></tr>
+<tr><td>Binding</td><td>The rule linking an exchange to a queue</td></tr>
+<tr><td>Queue</td><td>Holds messages until a consumer takes them</td></tr>
+<tr><td>Consumer</td><td>The worker process that handles the message</td></tr>
+</table>
+<h2>Rules of thumb</h2>
+<ul>
+<li>Keep in the request what the customer must know now (payment result); queue the rest.</li>
+<li>Unroutable message: dropped or returned, depending on publisher options.</li>
+<li>Default exchange: nameless; queues auto-bind by queue name.</li>
+</ul>
+<nav class="lesson-nav"><a href="../index.html">&larr; Course home</a></nav>
+</main>
+<script src="../assets/lessons.js"></script>
+<script src="../assets/course.js"></script>
+</body></html>
