@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lesson 5: When jobs fail</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Lesson 5 &middot; about 15 minutes</p>
+<h1>When jobs fail (and when they run twice)</h1>
+<div class="win"><strong>Your win:</strong> trace what happens to a failing job in Laravel and in RabbitMQ, and make an order-fulfilment job safe to run twice.</div>
+
+<details><summary>Warm-up from Lesson 4 (answer aloud first)</summary>
+<p>A worker dies mid-job and never acknowledges. What does RabbitMQ do, and what side effect follows? <em>Check:</em> it redelivers the message to another consumer, so the job can run twice.</p></details>
+
+<h2>1. Two reasons the same job runs again</h2>
+<p>There are two separate mechanisms, and an interviewer may test whether you can tell them apart.</p>
+<ul>
+<li><strong>Laravel retries:</strong> the job threw an exception or timed out, and Laravel attempts it again.</li>
+<li><strong>RabbitMQ redelivery:</strong> the consumer never acknowledged, so the broker hands the message to someone else (Lesson 4).</li>
+</ul>
+<p>Either way, the same job body can execute more than once. A job is <strong>idempotent</strong> when running it twice has the same effect as running it once. That is my summary of the two mechanisms; the term itself is explained well in Stripe's docs on safely retrying requests (<a href="https://docs.stripe.com/api/idempotent_requests">Stripe: Idempotent requests</a>).</p>
+
+<h2>2. Laravel's failure pipeline</h2>
+<p>Facts from the <a href="https://laravel.com/docs/queues#max-job-attempts-and-timeout">Laravel 13 queue docs</a>:</p>
+<ul>
+<li>By default, Laravel attempts a job <strong>once</strong>. Raise it with <code>--tries</code> on the worker or with the <code>Tries</code> attribute (or a <code>tries()</code> method) on the job.</li>
+<li>An attempt is consumed by an unhandled exception, a manual release, a middleware release, a timeout, or a normal completion.</li>
+<li>Backoff sets the delay between retries. An array such as <code>[1, 5, 10]</code> waits 1 second, then 5, then 10, and 10 for every later retry.</li>
+<li>When attempts run out, the job goes into the <code>failed_jobs</code> table and its <code>failed()</code> method is called. Inspect with <code>queue:failed</code>, retry with <code>queue:retry &lt;id&gt;</code> or <code>queue:retry all</code>.</li>
+</ul>
+<pre class="mermaid">
+flowchart TD
+  A["Worker runs the job"] --> B{"Exception<br/>or timeout?"}
+  B -- no --> OK["Job finished"]
+  B -- yes --> C{"Attempts left?"}
+  C -- yes --> D["Release back to the queue<br/>after the backoff delay"] --> A
+  C -- no --> E["Insert into failed_jobs<br/>and call failed()"]
+</pre>
+<p class="note">Jobs run with <code>dispatchSync</code> are not stored in <code>failed_jobs</code>; their exceptions are handled immediately (same docs, "Dealing With Failed Jobs").</p>
+
+<h2>3. The timeout trap</h2>
+<p>The worker's <code>--timeout</code> (60 seconds by default) must be several seconds shorter than the connection's <code>retry_after</code> value. Otherwise a job can be re-attempted before it has finished, and processed twice (<a href="https://laravel.com/docs/queues#job-expirations-and-timeouts">Laravel: Job Expirations and Timeouts</a>). Timeouts also need the PCNTL PHP extension.</p>
+<p>Careful: <code>retry_after</code> is documented for Laravel's built-in drivers. The RabbitMQ driver's README does not mention it, so do not assume it applies; in RabbitMQ, redelivery is driven by acknowledgements (Lesson 4). The README does suggest <code>ext-pcntl</code> for all consumer features (<a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">README</a>).</p>
+
+<h2>4. The RabbitMQ side: dead letters</h2>
+<p>Laravel's <code>failed_jobs</code> table lives in your database. RabbitMQ has its own mechanism: a queue can name a <strong>dead letter exchange</strong>, and messages are republished there when they are rejected without requeue, expire, overflow a length limit, or exceed a quorum queue's delivery limit. Dead letter exchanges are ordinary exchanges. If the target queue is missing, the messages are silently dropped, and by default the republish does not use publisher confirms, so it is not guaranteed safe in a cluster (<a href="https://www.rabbitmq.com/docs/dlx">RabbitMQ: Dead Letter Exchanges</a>).</p>
+<p>The driver bridges the two worlds with <code>reroute_failed</code>: Laravel still stores failed jobs in the database, but the message can also be sent to a failed exchange. If you set no failed routing key, it defaults to the queue name plus <code>.failed</code>, and you probably create that exchange and queue yourself (<a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">README</a>). Whether your target company uses either mechanism is a good question.</p>
+
+<h2>5. Making a job safe to run twice</h2>
+<p>Three tools, in order of how often people confuse them:</p>
+<ul>
+<li><strong>Idempotency key on external calls.</strong> Stripe's API saves the result of the first request made with a given key and returns it for retries. All <code>POST</code> requests accept a key, and Stripe suggests random V4 UUIDs (<a href="https://docs.stripe.com/api/idempotent_requests">Stripe docs</a>). Whether a warehouse API supports this is something to find out.</li>
+<li><strong><code>ShouldBeUnique</code>.</strong> A unique job is not dispatched while another instance is on the queue and unfinished. It needs a cache driver with atomic locks shared by all servers, and does not apply inside batches (<a href="https://laravel.com/docs/queues#unique-jobs">Laravel: Unique Jobs</a>). It stops duplicate <em>dispatch</em>. It does not stop a retried or redelivered job from running again.</li>
+<li><strong><code>WithoutOverlapping</code>.</strong> Prevents two jobs with the same key from processing at once, and a released job still consumes an attempt (<a href="https://laravel.com/docs/queues#preventing-job-overlaps">Laravel: Preventing Job Overlaps</a>).</li>
+</ul>
+<p>Beyond those, a common pattern (mine, not from these docs) is for the job to check the record's own state first and record each side effect when it is done.</p>
+
+<h2>6. Practice A: make it safe</h2>
+<pre>public function handle(Warehouse $warehouse, Mailer $mail): void
+{
+    $this-&gt;order-&gt;product-&gt;decrement('stock');   // 1
+    $warehouse-&gt;createShipment($this-&gt;order);     // 2
+    $mail-&gt;sendReceipt($this-&gt;order);             // 3
+}</pre>
+<p>The worker crashes after step 2 and the message is redelivered. What happens on the second run, and what would you change?</p>
+<details><summary>Answer</summary>
+<p>All three steps run again: stock is decremented twice, a second shipment is created, and a second receipt goes out. Fixes: skip work already recorded on the order (for example a shipped marker checked at the top of <code>handle()</code>), set each marker as soon as its step succeeds, and pass a stable idempotency key to the warehouse call if that API supports one. Keeping each side effect in its own small job also limits what a retry repeats.</p></details>
+
+<h2>7. Practice B: answer from memory</h2>
+<div id="quiz"></div>
+<script type="application/json" id="quiz-data">[
+ {"q":"By default, how many times does Laravel attempt a job?","options":["Three attempts","Five attempts","One attempt"],"answer":2,"why":"The docs say Laravel attempts a job once unless you raise tries."},
+ {"q":"A worker's --timeout is longer than retry_after. What do the docs warn?","options":["The queue deletes the job early","The job may be processed twice","The worker ignores the timeout flag"],"answer":1,"why":"The job can be re-attempted before it finished, so it may be processed twice."},
+ {"q":"Which tool stops an identical job being dispatched while one is still queued?","options":["ShouldBeUnique","WithoutOverlapping","ThrottlesExceptions"],"answer":0,"why":"ShouldBeUnique blocks duplicate dispatch. WithoutOverlapping limits concurrent processing."},
+ {"q":"Why is a unique job not automatically an idempotent job?","options":["Unique jobs can never be retried at all","Redelivery or retries can still run it twice","Unique locks only work with the Redis driver"],"answer":1,"why":"Uniqueness covers dispatch. A retry or redelivery can still execute the same job again."}
+]</script>
+
+<h2>8. Say it out loud</h2>
+<p>Interview prompt: <em>"What does idempotent mean, and why does it matter with queues?"</em></p>
+<details><summary>Model answer</summary>
+<p>"Idempotent means running something twice has the same effect as once. With queues a job can run more than once: Laravel retries after an exception, and RabbitMQ redelivers if a worker dies before acknowledging. So side effects like charging, shipping and emailing need guards: state checks on the record, idempotency keys on external APIs such as Stripe, and unique-job locks only to prevent duplicate dispatch, which is a different problem."</p></details>
+
+<h2>Ask the team</h2>
+<ol>
+<li>What are your default tries and backoff, and who gets alerted when jobs land in <code>failed_jobs</code>?</li>
+<li>Do you use dead letter exchanges or the driver's <code>reroute_failed</code>?</li>
+<li>How do you make fulfilment and email jobs safe to repeat?</li>
+</ol>
+
+<h2>Primary source</h2>
+<p>Read "Dealing With Failed Jobs" and "Max Attempts" in <a href="https://laravel.com/docs/queues#dealing-with-failed-jobs">Laravel: Queues</a>, then Stripe's <a href="https://docs.stripe.com/api/idempotent_requests">Idempotent requests</a>.</p>
+<p class="note">Anything unclear? Ask your teacher. A good question: "design the failure handling for the receipt email job."</p>
+<p>Cheat sheet: <a href="../reference/message-path.html">The path of one message</a></p>
+<nav class="lesson-nav" data-lesson-nav></nav>
+</main>
+<script src="../assets/lessons.js"></script>
+<script src="../assets/course.js"></script>
+</body></html>

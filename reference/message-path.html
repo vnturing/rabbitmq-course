@@ -51,6 +51,18 @@ flowchart LR
 </table>
 <ul><li>Redelivery after a missing acknowledgement means a job can run twice (Lesson 5).</li>
 <li>Driver README is silent on durability, persistence, confirms and ack mode: check on a live system.</li></ul>
+<h2>When jobs fail (Lesson 5)</h2>
+<table>
+<tr><th>Topic</th><th>Remember</th></tr>
+<tr><td>Default attempts</td><td>One. Raise with <code>--tries</code> or the job's tries setting</td></tr>
+<tr><td>Backoff</td><td>Array = delay per retry, last value repeats</td></tr>
+<tr><td>Out of attempts</td><td><code>failed_jobs</code> row + <code>failed()</code>; <code>queue:retry</code></td></tr>
+<tr><td>Timeout vs retry_after</td><td>Keep timeout shorter, or the job may run twice (built-in drivers)</td></tr>
+<tr><td>Dead letter exchange</td><td>Broker-side: reject w/o requeue, TTL, length, delivery limit</td></tr>
+<tr><td><code>reroute_failed</code></td><td>Driver option: also send failed messages to an exchange</td></tr>
+<tr><td><code>ShouldBeUnique</code></td><td>Stops duplicate dispatch, not duplicate execution</td></tr>
+<tr><td>Idempotency key</td><td>Stable key on external POSTs so retries repeat nothing</td></tr>
+</table>
 <h2>Rules of thumb</h2>
 <ul>
 <li>Keep in the request what the customer must know now (payment result); queue the rest.</li>

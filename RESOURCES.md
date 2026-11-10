@@ -10,6 +10,10 @@
   Exchange types, default exchange, pre-declared exchanges. Use for: Lesson 2 routing detail.
 - [RabbitMQ: Consumer Acknowledgements and Publisher Confirms](https://www.rabbitmq.com/docs/confirms)
   Manual vs automatic acknowledgement, redelivery, publisher confirms. Use for: reliability and failure lessons.
+- [RabbitMQ: Dead Letter Exchanges](https://www.rabbitmq.com/docs/dlx)
+  When messages are dead-lettered, routing, and safety caveats. Use for: failure-handling lessons.
+- [Stripe: Idempotent requests](https://docs.stripe.com/api/idempotent_requests)
+  Primary source for idempotency keys on payment calls. Use for: double-charge and retry-safety explanations.
 - [RabbitMQ: Publishers](https://www.rabbitmq.com/docs/publishers)
   Publishing, publisher confirms, unroutable messages. Use for: reliability lessons.
 - [RabbitMQ documentation index](https://www.rabbitmq.com/docs)
@@ -27,7 +31,7 @@
   Best-effort community help. Use for: quick usage questions.
 
 ## Gaps
-- Retry-safety and idempotency in Laravel jobs: only secondary blog posts found so far; verify against the Laravel docs before teaching Lesson 5.
+- Idempotency patterns inside Laravel jobs (state checks, markers): no primary source found; Lesson 5 labels these as general practice. Stripe covers the external-API side.
 - No vetted Laravel-plus-RabbitMQ community found yet.
 - Which driver the target company uses is unknown.
 - The driver README is also silent on queue durability, message persistence, publisher confirms and acknowledgement mode; check on a live system.
