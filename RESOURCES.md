@@ -15,7 +15,7 @@
 - [Laravel: Queues](https://laravel.com/docs/queues)
   Official Laravel docs on jobs, workers, connections vs queues, retries, failed jobs, testing. Use for: every Laravel-side claim.
 - [vladimir-yuldashev/laravel-queue-rabbitmq (Packagist)](https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq)
-  README for the community RabbitMQ driver: config, Horizon support, failed-job rerouting, custom job classes. Use for: Lesson 3 onward. Source: https://github.com/vyuldashev/laravel-queue-rabbitmq
+  README for the community RabbitMQ driver (v15.0.2, Sept 2026; Laravel 10 to 13): exchange options, consuming commands, Horizon, failed-job rerouting, custom job classes. Use for: Lesson 3 onward. Source: https://github.com/vyuldashev/laravel-queue-rabbitmq
 
 ## Wisdom (Communities)
 
@@ -28,3 +28,4 @@
 - Retry-safety and idempotency in Laravel jobs: only secondary blog posts found so far; verify against the Laravel docs before teaching Lesson 5.
 - No vetted Laravel-plus-RabbitMQ community found yet.
 - Which driver the target company uses is unknown.
+- The driver README does not state what happens when no exchange options are set; check the management UI on a real system rather than assuming.

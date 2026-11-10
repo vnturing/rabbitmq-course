@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lesson 3: Laravel meets RabbitMQ</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Lesson 3 &middot; about 15 minutes</p>
+<h1>Laravel meets RabbitMQ</h1>
+<div class="win"><strong>Your win:</strong> read a <code>rabbitmq</code> connection in <code>config/queue.php</code> and say where messages go, which queue workers read, how they are consumed, and what to ask the team.</div>
+
+<details><summary>Warm-up from Lesson 2 (answer aloud first)</summary>
+<p>A queue is bound to a topic exchange with <code>order.*</code>. Does <code>order.placed.eu</code> reach it? <em>Check:</em> no. <code>*</code> matches exactly one word, and that key has three.</p></details>
+
+<h2>1. Which driver? A caveat first</h2>
+<p>Laravel ships drivers for the database, Redis, SQS and others, but not RabbitMQ (<a href="https://laravel.com/docs/queues">Laravel: Queues</a>). The common community package is <a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">vladimir-yuldashev/laravel-queue-rabbitmq</a>. Its page lists v15.0.2 (September 2026), requiring Laravel 10 to 13 and <code>php-amqplib</code>. I do not know that your target company uses it, so treat everything below as "what this driver does" and confirm with them.</p>
+<p>The package's own promise: once configured, you use the normal Laravel Queue API and change nothing else in your job code (<a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">README</a>). That is why your <code>FulfilOrder::dispatch(...)</code> from Lesson 1 stays the same.</p>
+
+<h2>2. Mapping Laravel words to RabbitMQ words</h2>
+<table>
+<tr><th>In Laravel</th><th>In RabbitMQ</th></tr>
+<tr><td><code>dispatch()</code></td><td>The publisher publishes a message</td></tr>
+<tr><td>Queue name (<code>onQueue('fulfilment')</code>)</td><td>A RabbitMQ queue; with no name given, the driver uses a queue called <code>default</code> unless you set <code>queue</code> in the connection</td></tr>
+<tr><td>Connection in <code>config/queue.php</code></td><td>Host, port, user and vhost of the broker</td></tr>
+<tr><td>Worker process</td><td>The consumer</td></tr>
+<tr><td>Job payload</td><td>The message body; Laravel's payload names the job class to run</td></tr>
+</table>
+<pre class="mermaid">
+sequenceDiagram
+  participant C as Checkout controller
+  participant D as Laravel + RabbitMQ driver
+  participant B as RabbitMQ broker
+  participant W as Worker
+  C->>D: dispatch FulfilOrder on queue fulfilment
+  D->>B: publish message
+  B->>B: route to the fulfilment queue
+  W->>B: consume
+  B->>W: message with job class and data
+  W->>W: run handle()
+</pre>
+
+<h2>3. Where does the message go? The exchange options</h2>
+<p>The README documents optional <code>exchange</code>, <code>exchange_type</code> and <code>exchange_routing_key</code> settings under <code>options.queue</code>. Its rules, in its own terms:</p>
+<ul>
+<li>If you set an exchange but no routing key, the routing key is the <strong>queue name</strong>.</li>
+<li>If the exchange is omitted while using these routing-key options, RabbitMQ uses <code>amq.direct</code>.</li>
+<li>If you publish to an exchange with a routing key, you probably create the queues and <strong>bindings</strong> yourself.</li>
+</ul>
+<p>That last line is Lesson 2 showing up in production: someone has to declare the bindings that connect the exchange to the queues. The README does not spell out what happens when you set no exchange options at all, so I will not guess. On a real system you can see it directly in the RabbitMQ management interface, under exchanges and queues.</p>
+
+<h2>4. How do workers consume? Two commands</h2>
+<p>The README describes two ways (<a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">Consuming Messages</a>):</p>
+<ol>
+<li><code>queue:work</code>, Laravel's built-in command. It uses <code>basic_get</code> and can consume multiple queues.</li>
+<li><code>rabbitmq:consume</code>, from the package. It uses <code>basic_consume</code>, is described as about twice as performant, but does not support multiple queues.</li>
+</ol>
+<p>Connect this to Lesson 2's source: RabbitMQ's guide calls subscribing ("push") the recommended way to consume and polling ("pull") highly inefficient in most cases (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">AMQP 0-9-1 Model Explained</a>). Which command the company runs is a good, specific question to ask.</p>
+
+<h2>5. Three more options worth recognising</h2>
+<ul>
+<li><strong>Horizon:</strong> set <code>RABBITMQ_WORKER</code> to <code>horizon</code> to use Laravel Horizon with this driver (README).</li>
+<li><strong>Foreign messages:</strong> if another application publishes messages that do not follow Laravel's job payload, you can extend the package's <code>RabbitMQJob</code> class and point the <code>job</code> option at yours (README). This is the clue that RabbitMQ is often shared between services, not just between Laravel and itself.</li>
+<li><strong>Teasers:</strong> <code>after_commit</code> (Lesson 4) and <code>reroute_failed</code> (Lesson 5).</li>
+</ul>
+
+<h2>6. Practice A: read the config</h2>
+<p>This sample is illustrative, built from the README's option names. Answer each question aloud, then open the answers.</p>
+<pre>'rabbitmq' =&gt; [
+    'driver' =&gt; 'rabbitmq',
+    'hosts'  =&gt; [['host' =&gt; env('RABBITMQ_HOST'), 'port' =&gt; 5672, 'vhost' =&gt; 'shop']],
+    'queue'  =&gt; 'fulfilment',
+    'after_commit' =&gt; true,
+    'options' =&gt; ['queue' =&gt; [
+        'exchange' =&gt; 'shop-events',
+        'exchange_type' =&gt; 'topic',
+        'reroute_failed' =&gt; true,
+        'failed_exchange' =&gt; 'shop-failed',
+    ]],
+],</pre>
+<ol>
+<li>A job is dispatched with no <code>onQueue()</code>. Which queue?</li>
+<li>Which exchange does it publish to, and with what routing key?</li>
+<li>Who has to make sure the <code>fulfilment</code> queue actually receives it?</li>
+<li>A job fails for good. Where does a record of it end up?</li>
+</ol>
+<details><summary>Answers</summary>
+<ol>
+<li><code>fulfilment</code>, because <code>queue</code> sets the connection's default queue.</li>
+<li>The <code>shop-events</code> topic exchange, with routing key <code>fulfilment</code> (the queue name, since no routing key is set).</li>
+<li>Whoever manages the topology: the queue needs a binding on <code>shop-events</code> whose key matches <code>fulfilment</code>. The README says you probably create these bindings yourself.</li>
+<li>Laravel stores failed jobs in the database; with <code>reroute_failed</code> the message is also rerouted to the <code>shop-failed</code> exchange (README). Lesson 5 covers this properly.</li>
+</ol></details>
+
+<h2>7. Practice B: answer from memory</h2>
+<div id="quiz"></div>
+<script type="application/json" id="quiz-data">[
+ {"q":"An exchange is set but no routing key. Which routing key does the driver use?","options":["The job class name","A random generated key","The queue's own name"],"answer":2,"why":"The README says the routing key defaults to the queue name when it is omitted."},
+ {"q":"Which command uses basic_consume and is about twice as performant?","options":["queue:work","rabbitmq:consume","queue:retry"],"answer":1,"why":"rabbitmq:consume comes from the package. queue:work uses basic_get."},
+ {"q":"Why might a team keep using queue:work instead?","options":["It can read several queues together","It skips needing any worker process","It speeds up publishing to exchanges"],"answer":0,"why":"The README says rabbitmq:consume does not support multiple queues, while queue:work does."},
+ {"q":"Another service publishes messages without Laravel's job payload. What does the README suggest?","options":["Switch the worker to Horizon mode","Republish them through Laravel's failed table","Extend RabbitMQJob and set your class"],"answer":2,"why":"You extend the package's RabbitMQJob and set it with the job option, so every message is wrapped by your class."}
+]</script>
+
+<h2>8. Questions to ask the team</h2>
+<ol>
+<li>Which RabbitMQ driver and version do you use, and do workers run <code>queue:work</code> or <code>rabbitmq:consume</code>?</li>
+<li>Do you publish to the default setup or to your own exchange, and who declares the bindings?</li>
+<li>Do other services publish into the same broker?</li>
+</ol>
+
+<h2>Primary source</h2>
+<p>Read the README on the <a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">driver's Packagist page</a>, especially "Optional Queue Config" and "Consuming Messages", alongside <a href="https://laravel.com/docs/queues">Laravel: Queues</a> on connections versus queues.</p>
+<p class="note">Anything unclear? Ask your teacher. A good question: "walk me through what the driver would do for this config, step by step."</p>
+<p>Cheat sheet: <a href="../reference/message-path.html">The path of one message</a></p>
+<nav class="lesson-nav" data-lesson-nav></nav>
+</main>
+<script src="../assets/lessons.js"></script>
+<script src="../assets/course.js"></script>
+</body></html>

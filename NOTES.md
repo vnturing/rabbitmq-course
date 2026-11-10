@@ -4,4 +4,4 @@
 - Confirmed comfortable with Laravel (do not re-teach jobs, dispatch, queue:work). RabbitMQ depth unknown.
 - Interview this week: topic-exchange lesson folded into Lesson 2; later lessons renumbered (running workers = 0006, interview day = 0007).
 - Delivery: static site on GitHub Pages. New lesson = one new file in lessons/ plus flipping one line in assets/lessons.js, shipped as a git patch.
-- Verify driver defaults (exchange, routing key, worker command) from its docs before Lesson 3 claims.
+- Driver facts (Lesson 3) come from the Packagist README; it is silent on the no-options default exchange, so the course says so instead of guessing.

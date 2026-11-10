@@ -30,6 +30,17 @@ flowchart LR
 </table>
 <ul><li>Topic with only <code>#</code> acts like fanout; topic without wildcards acts like direct.</li>
 <li>Two matching bindings on one queue still deliver one copy.</li></ul>
+<h2>Laravel driver (Lesson 3)</h2>
+<table>
+<tr><th>Setting or command</th><th>Remember</th></tr>
+<tr><td><code>queue</code></td><td>Default queue name (otherwise <code>default</code>)</td></tr>
+<tr><td><code>options.queue.exchange</code> / <code>exchange_type</code></td><td>Publish to this exchange; no routing key set means the queue name is used</td></tr>
+<tr><td>Bindings</td><td>With a custom exchange you probably declare queue bindings yourself</td></tr>
+<tr><td><code>queue:work</code></td><td>basic_get; can read several queues</td></tr>
+<tr><td><code>rabbitmq:consume</code></td><td>basic_consume; ~2x faster; one queue only</td></tr>
+<tr><td><code>RABBITMQ_WORKER=horizon</code></td><td>Horizon support</td></tr>
+<tr><td><code>job</code> option</td><td>Your own RabbitMQJob class for foreign messages</td></tr>
+</table>
 <h2>Rules of thumb</h2>
 <ul>
 <li>Keep in the request what the customer must know now (payment result); queue the rest.</li>
