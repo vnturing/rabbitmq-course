@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lesson 4: Not losing orders</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Lesson 4 &middot; about 15 minutes</p>
+<h1>Not losing orders</h1>
+<div class="win"><strong>Your win:</strong> name the four hand-offs between checkout and a finished job, the safeguard for each, and the incident each safeguard prevents.</div>
+
+<details><summary>Warm-up from Lesson 3 (answer aloud first)</summary>
+<p>Which command in the driver's README consumes with <code>basic_consume</code>, and what is its limitation? <em>Check:</em> <code>rabbitmq:consume</code>; it does not support multiple queues.</p></details>
+
+<h2>1. A message crosses four hand-offs</h2>
+<p>An order is only safe if nothing is lost or half-done at any hand-off on its way. Each hand-off has its own failure and its own safeguard. We take them in order.</p>
+<pre class="mermaid">
+flowchart LR
+  A["Database<br/>transaction"] -- "1 commit first" --> B["Publish to<br/>RabbitMQ"] -- "2 publisher confirm" --> C[["Durable queue +<br/>persistent message"]] -- "3 deliver" --> D["Worker"] -- "4 acknowledge" --> E["Message<br/>removed"]
+</pre>
+
+<h2>2. Hand-off 1: the database and the dispatch</h2>
+<p>Dispatching a job inside a database transaction is allowed, but a worker can pick the job up before the transaction commits, so the rows it needs may not exist yet (<a href="https://laravel.com/docs/queues#jobs-and-database-transactions">Laravel: Jobs &amp; Database Transactions</a>). The reverse also bites: the transaction rolls back but the job already went out.</p>
+<p>Laravel's fix is the <code>after_commit</code> connection option. When it is <code>true</code>, a dispatch inside a transaction waits until the open parent transactions commit, is sent immediately if none are open, and is discarded if the transaction rolls back. You can also choose per dispatch with <code>-&gt;afterCommit()</code> or <code>-&gt;beforeCommit()</code>. Setting the option also affects queued listeners, mailables, notifications and broadcast events (<a href="https://laravel.com/docs/queues#jobs-and-database-transactions">same section</a>). The RabbitMQ driver's README shows the same <code>after_commit</code> key on its connection (<a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">README</a>).</p>
+<pre>DB::transaction(function () use ($cart) {
+    $order = Order::create([...]);
+    FulfilOrder::dispatch($order)-&gt;afterCommit(); // sent only if the transaction commits
+});</pre>
+
+<h2>3. Hand-off 2: Laravel to the broker</h2>
+<p>Did RabbitMQ actually take the message? Publisher confirms are the broker's acknowledgements back to the publisher; consumer acknowledgements are a separate feature and the two are unaware of each other (<a href="https://www.rabbitmq.com/docs/confirms">RabbitMQ: Acknowledgements and Confirms</a>). Also remember Lesson 1: a message that matches no binding is dropped or returned, depending on what the publisher asked for, and RabbitMQ exposes metrics that help spot publishers sending unroutable messages (<a href="https://www.rabbitmq.com/docs/publishers">Publishers</a>).</p>
+
+<h2>4. Hand-off 3: surviving a broker restart</h2>
+<p>Two settings are needed together. The queue must be <strong>durable</strong>, and the publisher must mark each message <strong>persistent</strong>. Publishing to a durable queue does not by itself make a message persistent, and persistence costs some performance (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">AMQP 0-9-1 Model Explained</a>).</p>
+
+<h2>5. Hand-off 4: worker to broker</h2>
+<p>With <strong>manual acknowledgements</strong>, RabbitMQ removes a message from the queue only after the consumer acknowledges it. If the consumer dies first, the message is redelivered to another consumer, or held until one registers (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">guide</a>). With <strong>automatic acknowledgement</strong>, the message counts as delivered the moment it is sent, so a connection that drops before processing loses it; the docs call this mode unsafe for many workloads (<a href="https://www.rabbitmq.com/docs/confirms">confirms guide</a>). Note the side effect: redelivery means a job can run twice. That is the subject of Lesson 5.</p>
+<p>The acknowledgement mode is chosen when a consumer subscribes with <code>basic.consume</code> or fetches with <code>basic.get</code> (<a href="https://www.rabbitmq.com/docs/confirms">same guide</a>). Those are the two methods behind Lesson 3's two commands.</p>
+
+<h2>6. What the driver documents, and what it does not</h2>
+<p>The driver's README documents <code>after_commit</code>, but I could not find its defaults for queue durability, message persistence, publisher confirms or acknowledgements there. Do not assume them. On a real system the RabbitMQ management interface shows each queue's properties, and these are good questions for the team (see the end).</p>
+
+<h2>7. Practice: match the incident to the fix</h2>
+<div id="quiz"></div>
+<script type="application/json" id="quiz-data">[
+ {"q":"An order insert rolled back, but its email job still ran. Which setting prevents this?","options":["Set after_commit to true","Raise the job timeout","Run more queue workers"],"answer":0,"why":"With after_commit, a job dispatched in a transaction is discarded if the transaction rolls back."},
+ {"q":"RabbitMQ restarted and queued messages vanished. What was missing?","options":["Faster consumers and bigger prefetch","Topic exchanges and wildcard bindings","Durable queues and persistent messages"],"answer":2,"why":"You need both: a durable queue and messages published as persistent."},
+ {"q":"A worker is killed mid-job with manual acknowledgements. What happens to the message?","options":["It disappears when the worker dies","It is redelivered to another consumer","It stays hidden until you restart"],"answer":1,"why":"Without an acknowledgement, RabbitMQ redelivers it. That is why duplicates are possible."},
+ {"q":"What does a publisher confirm tell the publisher?","options":["A worker finished processing","The transaction fully committed","RabbitMQ accepted the message"],"answer":2,"why":"Confirms are the broker's acknowledgements to publishers. Consumer acknowledgements are a separate feature."}
+]</script>
+
+<h2>8. Say it out loud</h2>
+<p>Interview prompt: <em>"How do you make sure an order is never lost between checkout and the warehouse?"</em> Walk the four hand-offs, then open the model answer.</p>
+<details><summary>Model answer</summary>
+<p>"I think in hand-offs. First, dispatch after the database commit, using Laravel's after_commit, so a rollback never leaves a stray job and a worker never races the transaction. Second, use publisher confirms so the app knows RabbitMQ accepted the message. Third, durable queues plus persistent messages so a broker restart does not wipe them. Fourth, manual acknowledgements so a crashed worker's message is redelivered. The price of that last one is that jobs can run twice, so the jobs themselves must be safe to repeat."</p></details>
+
+<h2>Ask the team</h2>
+<ol>
+<li>Are your queues durable and messages persistent, and do you use publisher confirms?</li>
+<li>Is <code>after_commit</code> set on the connection, or do you call <code>afterCommit()</code> per dispatch?</li>
+<li>What happens to a job if a worker is killed mid-run?</li>
+</ol>
+
+<h2>Primary source</h2>
+<p>Read RabbitMQ's <a href="https://www.rabbitmq.com/docs/confirms">Consumer Acknowledgements and Publisher Confirms</a> guide, plus the Jobs &amp; Database Transactions section of <a href="https://laravel.com/docs/queues#jobs-and-database-transactions">Laravel: Queues</a>.</p>
+<p class="note">Anything unclear? Ask your teacher. A good question: "walk me through an order's life if the broker restarts right after publish."</p>
+<p>Cheat sheet: <a href="../reference/message-path.html">The path of one message</a></p>
+<nav class="lesson-nav" data-lesson-nav></nav>
+</main>
+<script src="../assets/lessons.js"></script>
+<script src="../assets/course.js"></script>
+</body></html>

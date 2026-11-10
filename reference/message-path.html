@@ -41,6 +41,16 @@ flowchart LR
 <tr><td><code>RABBITMQ_WORKER=horizon</code></td><td>Horizon support</td></tr>
 <tr><td><code>job</code> option</td><td>Your own RabbitMQJob class for foreign messages</td></tr>
 </table>
+<h2>Not losing orders (Lesson 4)</h2>
+<table>
+<tr><th>Hand-off</th><th>Safeguard</th><th>Incident it prevents</th></tr>
+<tr><td>Database to dispatch</td><td><code>after_commit</code> or <code>afterCommit()</code></td><td>Job runs before commit, or after rollback</td></tr>
+<tr><td>Laravel to broker</td><td>Publisher confirms</td><td>Broker never accepted the message</td></tr>
+<tr><td>Broker restart</td><td>Durable queue + persistent message (both)</td><td>Queued messages vanish</td></tr>
+<tr><td>Worker to broker</td><td>Manual acknowledgements</td><td>Crashed worker loses the message</td></tr>
+</table>
+<ul><li>Redelivery after a missing acknowledgement means a job can run twice (Lesson 5).</li>
+<li>Driver README is silent on durability, persistence, confirms and ack mode: check on a live system.</li></ul>
 <h2>Rules of thumb</h2>
 <ul>
 <li>Keep in the request what the customer must know now (payment result); queue the rest.</li>
