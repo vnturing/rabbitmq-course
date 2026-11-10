@@ -10,7 +10,7 @@ Prepare for a job interview at a company whose main app is Laravel, which uses R
 - Review AI-generated queue/job code and spot the usual risks
 
 ## Constraints
-- Interview date not given; lessons are short (12 to 15 minutes) so progress is possible in small sittings
+- Interview is this week (stated 2026-11-10): prioritise Lessons 3 to 5 and the interview-day lesson; keep other lessons short
 - Learns sequentially: each idea builds on the previous one
 - Course is a static HTML site on GitHub Pages; new lessons arrive as git patches
 

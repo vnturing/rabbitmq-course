@@ -4,6 +4,8 @@
 
 - [RabbitMQ: AMQP 0-9-1 Model Explained](https://www.rabbitmq.com/tutorials/amqp-concepts)
   Official explanation of exchanges, queues, bindings, acknowledgements. Use for: all vocabulary and routing questions.
+- [RabbitMQ tutorial 5: Topics](https://www.rabbitmq.com/tutorials/tutorial-five-go)
+  Official worked example of topic routing keys, `*` and `#`. Use for: topic exchange rules (a PHP series also exists under Get Started).
 - [RabbitMQ: Exchanges](https://www.rabbitmq.com/docs/exchanges)
   Exchange types, default exchange, pre-declared exchanges. Use for: Lesson 2 routing detail.
 - [RabbitMQ: Publishers](https://www.rabbitmq.com/docs/publishers)

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lesson 2: Exchanges, queues and bindings</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Lesson 2 &middot; about 12 minutes</p>
+<h1>How an exchange picks the queue</h1>
+<div class="win"><strong>Your win:</strong> given a message's routing key and a set of bindings, work out which queues receive it, and say when you would choose fanout, direct or topic.</div>
+
+<details><summary>Warm-up from Lesson 1 (answer aloud first)</summary>
+<p>Name the four nouns, say where a publisher sends a message, and say what a binding is. <em>Check:</em> publisher, exchange, queue, consumer; publishers send to an exchange; a binding is the rule that links an exchange to a queue.</p></details>
+
+<h2>1. The open question</h2>
+<p>Last time the exchange had bindings to a fulfilment queue and an email queue, but we never said how it chose. Now the shop has three queues: email, warehouse and analytics. When "order placed" arrives, which ones get it? Two inputs decide.</p>
+<ul>
+<li>The message carries a <strong>routing key</strong>, a label such as <code>order.placed</code>, set by the publisher.</li>
+<li>Each queue's binding can carry a <strong>binding key</strong>. The routing key acts like a filter against it (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">RabbitMQ: AMQP 0-9-1 Model Explained</a>).</li>
+</ul>
+<p>The <strong>exchange type</strong> is the matching rule that compares them. RabbitMQ provides four types: direct, fanout, topic and headers (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">same guide</a>). We take the first three, simplest first.</p>
+<pre class="mermaid">
+flowchart LR
+  M["Message<br/>routing key = order.placed"] --> X{{"Exchange<br/>(type = the matching rule)"}}
+  X -- "binding key: order.*" --> Q1[["email queue"]]
+  X -- "binding keys: order.placed, stock.*" --> Q2[["warehouse queue"]]
+  X -- "binding key: #" --> Q3[["analytics queue"]]
+</pre>
+
+<h2>2. Fanout: everyone gets everything</h2>
+<p>A fanout exchange ignores the routing key and delivers a copy to every bound queue. If N queues are bound, N copies go out (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">guide</a>). Use it for broadcast: every consumer wants every event.</p>
+
+<h2>3. Direct: exact match</h2>
+<p>A direct exchange delivers to queues whose binding key equals the message's routing key. If several queues share the same binding key, all of them receive the message (<a href="https://www.rabbitmq.com/tutorials/amqp-concepts">guide</a>). Use it when each message has one clear kind, such as <code>payment</code> versus <code>refund</code>.</p>
+
+<h2>4. Topic: match on patterns</h2>
+<p>A topic exchange matches the routing key against the pattern used to bind each queue. Routing keys are words separated by dots, and two wildcards are allowed in binding keys: <code>*</code> stands for exactly one word and <code>#</code> for zero or more words (<a href="https://www.rabbitmq.com/tutorials/tutorial-five-go">RabbitMQ tutorial 5: Topics</a>). Using <code>&lt;thing&gt;.&lt;event&gt;</code> keys, the three queues above behave like this:</p>
+<table>
+<tr><th>Message routing key</th><th>email <code>order.*</code></th><th>warehouse <code>order.placed</code>, <code>stock.*</code></th><th>analytics <code>#</code></th></tr>
+<tr><td><code>order.placed</code></td><td>yes</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>order.cancelled</code></td><td>yes</td><td>no</td><td>yes</td></tr>
+<tr><td><code>stock.low</code></td><td>no</td><td>yes</td><td>yes</td></tr>
+<tr><td><code>order.placed.eu</code></td><td>no (three words)</td><td>no</td><td>yes</td></tr>
+</table>
+<p>Three facts from the tutorial worth remembering. A queue bound with just <code>#</code> receives everything, like fanout. Without wildcards, a topic exchange behaves like a direct one. And a message that matches two bindings of the same queue is delivered to that queue once (<a href="https://www.rabbitmq.com/tutorials/tutorial-five-go">tutorial 5</a>). A message matching no binding is lost unless the publisher asked for it to be returned (see Lesson 1 and <a href="https://www.rabbitmq.com/docs/publishers">Publishers</a>).</p>
+<pre class="mermaid">
+flowchart TD
+  S["Should every bound queue<br/>get every message?"] -- yes --> F["Fanout"]
+  S -- no --> T{"Match on one exact key<br/>or on patterns?"}
+  T -- "exact key" --> D["Direct"]
+  T -- "patterns" --> P["Topic"]
+</pre>
+<p class="note">The fourth type, headers, routes on message headers and ignores the routing key. You will rarely need it for this course.</p>
+<p>Which of these your target company actually meets depends on what exchange Laravel's RabbitMQ driver publishes to. We check that in Lesson 3 instead of guessing.</p>
+
+<h2>5. Practice: answer from memory</h2>
+<div id="quiz"></div>
+<script type="application/json" id="quiz-data">[
+ {"q":"Which exchange type ignores the routing key and copies to all bound queues?","options":["Direct exchange","Topic exchange","Fanout exchange"],"answer":2,"why":"Fanout delivers a copy to every bound queue and ignores the routing key."},
+ {"q":"A queue is bound with the key order.* on a topic exchange. Which routing key does it receive?","options":["order.placed","order.placed.eu","orders.placed"],"answer":0,"why":"The star matches exactly one word. order.placed.eu has three words and orders differs from order."},
+ {"q":"A queue is bound with only # on a topic exchange. What does it receive?","options":["Only keys containing a hash","Every message whatever its key","Only keys starting with order"],"answer":1,"why":"The hash matches zero or more words, so the queue receives everything, like a fanout."},
+ {"q":"One message matches two bindings of the same queue. How many copies does that queue get?","options":["Two separate copies","Zero copies delivered","Exactly one copy"],"answer":2,"why":"RabbitMQ delivers it to that queue once, even though two bindings match."}
+]</script>
+
+<h2>6. Say it out loud</h2>
+<p>Interview prompt: <em>"When would you use a topic exchange instead of fanout?"</em></p>
+<details><summary>Model answer</summary>
+<p>"Fanout sends every message to every bound queue, which is right when all consumers want everything. A topic exchange lets each consumer subscribe by pattern on the routing key, so email can take <code>order.*</code>, the warehouse can take stock events, and analytics can take <code>#</code>. The RabbitMQ docs recommend considering topic exchanges whenever several consumers selectively choose which kinds of messages they want."</p></details>
+
+<h2>Primary source</h2>
+<p>Read the "Exchanges and Exchange Types" section of <a href="https://www.rabbitmq.com/tutorials/amqp-concepts">AMQP 0-9-1 Model Explained</a>, then <a href="https://www.rabbitmq.com/tutorials/tutorial-five-go">tutorial 5: Topics</a>. The tutorials page also has a PHP series.</p>
+<p class="note">Anything unclear? Ask your teacher. A good question: "design the routing keys for an electronics shop and tell me where it gets awkward."</p>
+<p>Cheat sheet: <a href="../reference/message-path.html">The path of one message</a></p>
+<nav class="lesson-nav" data-lesson-nav></nav>
+</main>
+<script src="../assets/lessons.js"></script>
+<script src="../assets/course.js"></script>
+</body></html>

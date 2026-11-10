@@ -1,6 +1,7 @@
 # Notes
 - Learner prefers sequential teaching: each idea built on the previous one.
 - Diagrams: Mermaid only (no ASCII diagrams).
-- Assumed comfortable with Laravel itself (dispatching jobs); RabbitMQ depth unknown. Adjust if Lesson 1 quiz shows otherwise.
+- Confirmed comfortable with Laravel (do not re-teach jobs, dispatch, queue:work). RabbitMQ depth unknown.
+- Interview this week: topic-exchange lesson folded into Lesson 2; later lessons renumbered (running workers = 0006, interview day = 0007).
 - Delivery: static site on GitHub Pages. New lesson = one new file in lessons/ plus flipping one line in assets/lessons.js, shipped as a git patch.
 - Verify driver defaults (exchange, routing key, worker command) from its docs before Lesson 3 claims.

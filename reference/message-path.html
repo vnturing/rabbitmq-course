@@ -20,6 +20,16 @@ flowchart LR
 <tr><td>Queue</td><td>Holds messages until a consumer takes them</td></tr>
 <tr><td>Consumer</td><td>The worker process that handles the message</td></tr>
 </table>
+<h2>Exchange types (Lesson 2)</h2>
+<table>
+<tr><th>Type</th><th>Rule</th></tr>
+<tr><td>Fanout</td><td>Ignores the key; copy to every bound queue</td></tr>
+<tr><td>Direct</td><td>Binding key equals routing key</td></tr>
+<tr><td>Topic</td><td>Pattern on dotted words: <code>*</code> = exactly one word, <code>#</code> = zero or more</td></tr>
+<tr><td>Headers</td><td>Matches on message headers; ignores the key</td></tr>
+</table>
+<ul><li>Topic with only <code>#</code> acts like fanout; topic without wildcards acts like direct.</li>
+<li>Two matching bindings on one queue still deliver one copy.</li></ul>
 <h2>Rules of thumb</h2>
 <ul>
 <li>Keep in the request what the customer must know now (payment result); queue the rest.</li>
