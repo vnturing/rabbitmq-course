@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lesson 6: Running workers in production</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Lesson 6 &middot; about 15 minutes</p>
+<h1>Running workers in production</h1>
+<div class="win"><strong>Your win:</strong> explain how queue workers are kept alive, deployed, recycled and sized, and spot the mistakes in a Supervisor config.</div>
+
+<details><summary>Warm-up from Lesson 5 (answer aloud first)</summary>
+<p>Which worker setting must be shorter than <code>retry_after</code>, and why? <em>Check:</em> <code>--timeout</code>; otherwise a job may be re-attempted before it finishes and processed twice (documented for Laravel's built-in drivers).</p></details>
+
+<h2>1. A worker is a long-lived process</h2>
+<p>So far a "worker" was a box in a diagram. In reality <code>queue:work</code> is a PHP process that boots your application once and then keeps running, holding that booted state in memory. Two consequences, both from the <a href="https://laravel.com/docs/queues#running-the-queue-worker">Laravel docs</a>:</p>
+<ul>
+<li>It does not notice code changes after it starts, so deployments must restart workers.</li>
+<li>Static state your code creates is not reset between jobs, and daemon workers do not reboot the framework per job, so heavy resources should be released after each job.</li>
+</ul>
+<p>Everything else in this lesson follows from those two facts.</p>
+
+<h2>2. Keeping workers alive: a process monitor</h2>
+<p>The command keeps running until it is stopped, and it will stop: after a worker timeout, after <code>queue:restart</code>, or on a crash. So production needs a process monitor that restarts it. The Laravel docs use Supervisor for this and run several processes with <code>numprocs</code> (<a href="https://laravel.com/docs/queues#supervisor-configuration">Supervisor Configuration</a>).</p>
+<pre>[program:laravel-worker]
+process_name=%(program_name)s_%(process_num)02d
+command=php /home/forge/app.com/artisan queue:work --sleep=3 --tries=3 --max-time=3600
+autostart=true
+autorestart=true
+stopasgroup=true
+killasgroup=true
+numprocs=8
+stopwaitsecs=3600</pre>
+<p class="note">This is the docs' example. The docs warn that <code>stopwaitsecs</code> must be greater than the seconds taken by your longest-running job, or Supervisor may kill a job mid-run.</p>
+
+<h2>3. Deploying: restart gracefully</h2>
+<pre class="mermaid">
+flowchart LR
+  A["Deploy<br/>new code"] --> B["php artisan<br/>queue:restart"] --> C["Workers finish the<br/>current job and exit"] --> D["Supervisor<br/>restarts them"] --> E["Workers boot<br/>with new code"]
+</pre>
+<p><code>queue:restart</code> tells all workers to exit gracefully after their current job, so no in-flight job is lost. It relies on the cache to store the restart signal, so a cache driver must be configured (<a href="https://laravel.com/docs/queues#queue-workers-and-deployment">Queue Workers and Deployment</a>). Likewise, when a worker receives <code>SIGTERM</code>, <code>SIGINT</code> or <code>SIGQUIT</code> mid-job, it finishes the job before exiting. A job can implement <code>Interruptible</code> to react to the signal, for example to save progress (<a href="https://laravel.com/docs/queues#reacting-to-worker-signals">Reacting to Worker Signals</a>).</p>
+
+<h2>4. Recycling workers on purpose</h2>
+<p>Because memory accumulates in a long-lived process, the docs offer limits that make a worker exit so the process monitor can start a fresh one (<a href="https://laravel.com/docs/queues#the-queue-work-command">The queue:work Command</a>):</p>
+<ul>
+<li><code>--max-jobs=1000</code>: exit after that many jobs.</li>
+<li><code>--max-time=3600</code>: exit after that many seconds.</li>
+<li><code>--memory=60%</code>: exit above a memory limit (default 128 MB; percentages need a finite PHP <code>memory_limit</code>).</li>
+</ul>
+<p>Concurrency comes from running more processes: <code>numprocs</code> in Supervisor, or several <code>queue:work</code> commands. Priority comes from listing queues, as in <code>--queue=high,low</code>, which drains <code>high</code> first.</p>
+
+<h2>5. The RabbitMQ side: prefetch</h2>
+<p>Prefetch (the <code>basic.qos</code> setting) limits how many unacknowledged messages a consumer may hold at once. In RabbitMQ it applies separately to each consumer on a channel, and a value of 0 means no limit. A server-wide default can be set with <code>default_consumer_prefetch</code> (<a href="https://www.rabbitmq.com/docs/consumer-prefetch">RabbitMQ: Consumer Prefetch</a>). It concerns consuming with acknowledgements, which ties back to Lesson 4. I could not verify how the Laravel driver sets prefetch, so make that a question for the team rather than an assumption.</p>
+<p>Two things from Lesson 3 combine here. <code>rabbitmq:consume</code> handles one queue, so reproducing <code>--queue=high,low</code> priority behaviour would mean separate worker processes per queue (my reading of that limitation). And Laravel's docs describe Horizon as a dashboard for Redis-powered queues, while the driver's README says it supports Horizon via <code>RABBITMQ_WORKER=horizon</code>, so ask whether they use it.</p>
+
+<h2>6. Practice A: spot the mistakes</h2>
+<pre>[program:shop-worker]
+command=php /var/www/shop/artisan queue:work --timeout=300 --tries=3
+numprocs=4
+autorestart=false
+stopwaitsecs=10</pre>
+<p>List what would go wrong in production, then open the answers.</p>
+<details><summary>Answers</summary>
+<ol>
+<li><code>autorestart=false</code>: after a timeout or <code>queue:restart</code> the worker exits and nothing starts it again, so the queue silently stops being processed.</li>
+<li><code>stopwaitsecs=10</code>: jobs allowed to run up to 300 seconds can be killed mid-run when Supervisor stops the process. It should exceed the longest job.</li>
+<li>No <code>--max-time</code>, <code>--max-jobs</code> or <code>--memory</code> tuning: nothing recycles the process as memory accumulates.</li>
+<li>Nothing here restarts workers on deploy: the release process needs <code>php artisan queue:restart</code>.</li>
+</ol></details>
+
+<h2>7. Practice B: answer from memory</h2>
+<div id="quiz"></div>
+<script type="application/json" id="quiz-data">[
+ {"q":"New code is deployed. What must happen to running queue workers?","options":["Workers reload code every job","Gracefully restart all the workers","Only clear the application cache"],"answer":1,"why":"Workers hold booted code in memory. queue:restart makes them exit after their current job so the process monitor can start fresh ones."},
+ {"q":"A worker receives SIGTERM mid-job. What does Laravel do?","options":["It drops the job and exits now","It ignores the signal until idle forever","It finishes its current job, then exits"],"answer":2,"why":"The worker finishes the current job before exiting. Jobs can implement Interruptible to react."},
+ {"q":"Which Supervisor value must exceed your longest-running job?","options":["stopwaitsecs","numprocs","autorestart"],"answer":0,"why":"If stopwaitsecs is shorter, Supervisor may kill a job before it finishes."},
+ {"q":"What does a RabbitMQ prefetch count of 0 mean?","options":["No messages are ever delivered","No limit on unacknowledged messages","Only one unacknowledged message allowed"],"answer":1,"why":"Zero is treated as infinite, so any number of unacknowledged messages is allowed."}
+]</script>
+
+<h2>8. Say it out loud</h2>
+<p>Interview prompt: <em>"Walk me through deploying new code to an app with queue workers."</em></p>
+<details><summary>Model answer</summary>
+<p>"Workers are long-lived processes that keep the old code in memory, so after the release I run queue:restart. Workers finish their current job and exit, and Supervisor starts them again on the new code. That depends on a configured cache for the restart signal, on Supervisor's stopwaitsecs being longer than my longest job, and on jobs being safe to repeat in case one is interrupted."</p></details>
+
+<h2>Ask the team</h2>
+<ol>
+<li>What runs the workers (Supervisor, containers, Horizon), and how many per queue?</li>
+<li>Which consume command do they use, and what prefetch is set?</li>
+<li>How does a deploy restart workers?</li>
+<li>How do you monitor queue depth and failed jobs? (Laravel also has a "Monitoring Your Queues" section worth reading.)</li>
+</ol>
+
+<h2>Primary source</h2>
+<p>Read "Running the Queue Worker" and "Supervisor Configuration" in <a href="https://laravel.com/docs/queues#running-the-queue-worker">Laravel: Queues</a>, then <a href="https://www.rabbitmq.com/docs/consumer-prefetch">RabbitMQ: Consumer Prefetch</a>.</p>
+<p class="note">Anything unclear? Ask your teacher. A good question: "what would you check first if the queue is growing and workers look healthy?"</p>
+<p>Cheat sheet: <a href="../reference/message-path.html">The path of one message</a></p>
+<nav class="lesson-nav" data-lesson-nav></nav>
+</main>
+<script src="../assets/lessons.js"></script>
+<script src="../assets/course.js"></script>
+</body></html>

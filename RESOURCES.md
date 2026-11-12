@@ -14,6 +14,8 @@
   When messages are dead-lettered, routing, and safety caveats. Use for: failure-handling lessons.
 - [Stripe: Idempotent requests](https://docs.stripe.com/api/idempotent_requests)
   Primary source for idempotency keys on payment calls. Use for: double-charge and retry-safety explanations.
+- [RabbitMQ: Consumer Prefetch](https://www.rabbitmq.com/docs/consumer-prefetch)
+  basic.qos, per-consumer prefetch, 0 = unlimited, default prefetch setting. Use for: worker sizing.
 - [RabbitMQ: Publishers](https://www.rabbitmq.com/docs/publishers)
   Publishing, publisher confirms, unroutable messages. Use for: reliability lessons.
 - [RabbitMQ documentation index](https://www.rabbitmq.com/docs)
@@ -35,4 +37,6 @@
 - No vetted Laravel-plus-RabbitMQ community found yet.
 - Which driver the target company uses is unknown.
 - The driver README is also silent on queue durability, message persistence, publisher confirms and acknowledgement mode; check on a live system.
+- How the driver sets consumer prefetch could not be verified; check the repo config.
+- Laravel docs describe Horizon for Redis queues; the driver README claims Horizon support. Confirm what the company runs.
 - The driver README does not state what happens when no exchange options are set; check the management UI on a real system rather than assuming.

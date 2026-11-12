@@ -7,3 +7,4 @@
 - Driver facts (Lesson 3) come from the Packagist README; it is silent on the no-options default exchange, so the course says so instead of guessing.
 - Lesson 5 should cover (from the Laravel 13 docs): default is one attempt; tries, backoff arrays, failed_jobs, failed() method, queue:retry; --timeout must be shorter than retry_after or jobs may run twice; plus RabbitMQ redelivery duplicates and idempotency.
 - Lesson 6 should cover (from the Laravel docs): long-lived workers, queue:restart on deploy, Supervisor (numprocs, stopwaitsecs), --max-time/--max-jobs/--memory, signals; plus RabbitMQ prefetch and Horizon support via the driver. Lesson 7: interview day.
+- Lesson 7 (interview day): retrieval round across Lessons 1 to 6, a consolidated "ask the team" list from each lesson, and a review checklist for AI-assisted queue code derived from the lessons (label as derived, not sourced).

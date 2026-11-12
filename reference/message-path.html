@@ -63,6 +63,16 @@ flowchart LR
 <tr><td><code>ShouldBeUnique</code></td><td>Stops duplicate dispatch, not duplicate execution</td></tr>
 <tr><td>Idempotency key</td><td>Stable key on external POSTs so retries repeat nothing</td></tr>
 </table>
+<h2>Workers in production (Lesson 6)</h2>
+<table>
+<tr><th>Topic</th><th>Remember</th></tr>
+<tr><td>Worker</td><td>Long-lived process; old code stays in memory until restarted</td></tr>
+<tr><td>Deploy</td><td><code>php artisan queue:restart</code> (needs a cache); Supervisor restarts workers</td></tr>
+<tr><td>Supervisor</td><td><code>autorestart=true</code>, <code>numprocs</code>, <code>stopwaitsecs</code> &gt; longest job</td></tr>
+<tr><td>Recycling</td><td><code>--max-jobs</code>, <code>--max-time</code>, <code>--memory</code></td></tr>
+<tr><td>SIGTERM</td><td>Worker finishes the current job, then exits</td></tr>
+<tr><td>Prefetch</td><td>Max unacknowledged messages per consumer; 0 = no limit</td></tr>
+</table>
 <h2>Rules of thumb</h2>
 <ul>
 <li>Keep in the request what the customer must know now (payment result); queue the rest.</li>
