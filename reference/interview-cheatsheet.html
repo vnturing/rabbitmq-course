@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Reference: interview cheat sheet</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Reference</p>
+<h1>Interview cheat sheet</h1>
+<p class="note">One line per lesson. Skim before the interview.</p>
+<table>
+<tr><th>Lesson</th><th>One line</th></tr>
+<tr><td>1 Why a queue</td><td>Checkout waits only for the payment result; publisher, exchange, queue, consumer do the rest.</td></tr>
+<tr><td>2 Routing</td><td>Fanout copies to all; direct matches the exact key; topic matches patterns (<code>*</code> one word, <code>#</code> zero or more).</td></tr>
+<tr><td>3 Laravel</td><td><code>dispatch()</code> publishes; no routing key set means queue name; <code>queue:work</code> (several queues) vs <code>rabbitmq:consume</code> (faster, one queue).</td></tr>
+<tr><td>4 Not losing orders</td><td>after_commit, publisher confirms, durable queue + persistent message, manual acknowledgements.</td></tr>
+<tr><td>5 Failure</td><td>Default one attempt; backoff; failed_jobs; dead letters; redelivery means idempotent jobs; unique is not idempotent.</td></tr>
+<tr><td>6 Workers</td><td>Long-lived processes: Supervisor, <code>queue:restart</code> on deploy, stopwaitsecs &gt; longest job, recycle with max-time/jobs/memory.</td></tr>
+</table>
+<h2>Say "I would check" about</h2>
+<ul><li>Driver defaults for durability, persistence, confirms, acknowledgement mode, prefetch.</li>
+<li>What happens with no exchange options set.</li>
+<li>Whether <code>retry_after</code> applies with their driver.</li></ul>
+<nav class="lesson-nav"><a href="../index.html">&larr; Course home</a></nav>
+</main></body></html>

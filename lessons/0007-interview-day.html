@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lesson 7: Interview day</title>
+<link rel="stylesheet" href="../assets/course.css"></head>
+<body><main>
+<p class="kicker"><a href="../index.html">RabbitMQ in Laravel</a> &middot; Lesson 7 &middot; about 20 minutes</p>
+<h1>Interview day</h1>
+<div class="win"><strong>Your win:</strong> tell the whole story of an order through Laravel and RabbitMQ in about a minute, ask sharp questions about their setup, and review AI-written queue code with a checklist.</div>
+<p class="note">No new theory here. This lesson pulls Lessons 1 to 6 together. The checklist and advice are my synthesis of those lessons, not quotations from any one source.</p>
+
+<h2>1. Retrieval round: one question per lesson</h2>
+<p>Answer from memory before clicking. Anything you miss tells you which lesson to skim.</p>
+<div id="quiz"></div>
+<script type="application/json" id="quiz-data">[
+ {"q":"Lesson 1. Which part of RabbitMQ uses bindings to decide where a message goes?","options":["The consumer","The queue","The exchange"],"answer":2,"why":"Publishers send to an exchange, and the exchange routes copies to queues through bindings."},
+ {"q":"Lesson 2. A topic queue is bound with stock.* . Which routing key does it receive?","options":["stock.low","stock.low.eu","stocks.low"],"answer":0,"why":"The star matches exactly one word, so stock.low matches and the other two do not."},
+ {"q":"Lesson 3. Which command can read several queues using basic_get?","options":["rabbitmq:consume","queue:work","queue:retry"],"answer":1,"why":"queue:work uses basic_get and can read several queues. rabbitmq:consume uses basic_consume and handles one."},
+ {"q":"Lesson 4. With after_commit on, a transaction rolls back after dispatch. What happens to the job?","options":["It still runs","It waits forever","It is discarded"],"answer":2,"why":"Jobs dispatched during a transaction that rolls back are discarded."},
+ {"q":"Lesson 5. RabbitMQ redelivers when a worker dies unacknowledged. What must jobs be?","options":["Idempotent","Synchronous","Encrypted"],"answer":0,"why":"Redelivery and retries can run a job twice, so repeating it must be safe."},
+ {"q":"Lesson 6. What must be configured for queue:restart to work?","options":["A Redis cluster","A cache driver","A second worker"],"answer":1,"why":"The restart signal is stored in the cache, so a cache driver must be configured."}
+]</script>
+
+<h2>2. The one-minute story</h2>
+<p>Practise saying this aloud with your own words for each arrow. It is the whole course on one page, using electronics-shop examples (receipts, stock sync, analytics) that are mine, not facts about the company.</p>
+<pre class="mermaid">
+flowchart LR
+  A["Checkout commits<br/>the order"] -- "after_commit" --> B["Laravel dispatches<br/>a job"] --> X{{"Exchange"}}
+  X -- "bindings" --> Q1[["fulfilment queue"]]
+  X -- "bindings" --> Q2[["email queue"]]
+  X -- "bindings" --> Q3[["stock sync queue"]]
+  Q1 --> W["Workers<br/>kept alive by Supervisor"]
+  Q2 --> W
+  Q3 --> W
+  W -- "on failure" --> F["Retries, failed_jobs,<br/>dead letters"]
+</pre>
+<details><summary>A model telling</summary>
+<p>"The customer only waits for the payment result. Once the order transaction commits, Laravel dispatches a job. With the RabbitMQ driver that becomes a message published to an exchange, which routes it by bindings to queues such as fulfilment, email and stock sync. Workers, supervised and restarted on deploy, consume from those queues. For safety I want durable queues and persistent messages, manual acknowledgements so crashed workers' jobs are redelivered, and idempotent jobs because redelivery and retries mean a job can run twice. Jobs that run out of attempts land in failed_jobs, and RabbitMQ can dead-letter messages too."</p></details>
+
+<h2>3. Questions to ask them</h2>
+<p>Good questions show you know where the real decisions are. Pick three or four; do not recite the list.</p>
+<table>
+<tr><th>Area</th><th>Ask</th></tr>
+<tr><td>Setup</td><td>Which RabbitMQ driver and version do you use? Do you publish to your own exchange, and who declares queues and bindings?</td></tr>
+<tr><td>Consuming</td><td>Do workers run <code>queue:work</code> or <code>rabbitmq:consume</code>? What prefetch is set? Do you use Horizon?</td></tr>
+<tr><td>Reliability</td><td>Are queues durable and messages persistent? Do you use publisher confirms? Is <code>after_commit</code> on?</td></tr>
+<tr><td>Failure</td><td>What are your tries and backoff? Who is alerted when jobs land in <code>failed_jobs</code>? Do you use dead letter exchanges or <code>reroute_failed</code>?</td></tr>
+<tr><td>Safety</td><td>How do you make fulfilment and email jobs safe to run twice?</td></tr>
+<tr><td>Operations</td><td>What keeps workers running, and how does a deploy restart them? How do you watch queue depth?</td></tr>
+<tr><td>AI tools</td><td>Which parts of the queue code do AI tools help write, and how do you review that code?</td></tr>
+</table>
+
+<h2>4. Reviewing AI-written queue code</h2>
+<p>They are experimenting with AI tools, so you may be asked how you would check generated code. A model can write a job that runs perfectly in a demo and still fails under retries or restarts. Use this checklist, built from the lessons.</p>
+<table>
+<tr><th>Look for</th><th>Why it matters</th><th>Lesson</th></tr>
+<tr><td>Dispatch inside a transaction without <code>after_commit</code> or <code>afterCommit()</code></td><td>Job may run before commit, or survive a rollback</td><td>4</td></tr>
+<tr><td>Side effects with no guard against repeats</td><td>Redelivery or retries run the job twice</td><td>5</td></tr>
+<tr><td>Default tries, no backoff, on a flaky external API</td><td>The default is one attempt, so one blip fails the job</td><td>5</td></tr>
+<tr><td>No timeout on HTTP calls inside the job</td><td>Blocking IO may ignore the worker timeout; set client timeouts too</td><td>5</td></tr>
+<tr><td><code>ShouldBeUnique</code> used as if it were idempotency</td><td>It stops duplicate dispatch only</td><td>5</td></tr>
+<tr><td>New queue or exchange name with no binding or consumer</td><td>Messages go nowhere; bindings are often declared by you</td><td>2, 3</td></tr>
+<tr><td>Assumptions about durability, confirms or acknowledgements</td><td>The driver README does not document them; verify on a live system</td><td>4</td></tr>
+<tr><td>Whole models, big arrays or binary in the constructor</td><td>Models serialize as ids, relations can bloat payloads, binary must be encoded</td><td>1, 3</td></tr>
+<tr><td>A deploy with no <code>queue:restart</code></td><td>Workers keep running old code</td><td>6</td></tr>
+</table>
+<p class="note">The model-serialization and binary-encoding points come from the Laravel docs on class structure. The rest is my reading of Lessons 2 to 6.</p>
+
+<h2>5. If they use something different</h2>
+<p>You were told RabbitMQ and Laravel, but not the driver, topology or tooling. If an answer differs from what you learned, do not bluff. Map it to the concepts: where does the message go, who acknowledges it, what happens on failure, what happens twice. Then say what you would check. "I have not seen that driver option; I would look at how it declares queues and acknowledges messages" is a strong answer because it shows method.</p>
+
+<h2>6. What I could not verify</h2>
+<ul>
+<li>The driver README does not state what happens when no exchange options are set, nor its defaults for durability, persistence, confirms, acknowledgement mode or prefetch.</li>
+<li><code>retry_after</code> is documented for Laravel's built-in drivers; I could not confirm it applies with this driver.</li>
+<li>I do not know which driver, version or tooling the company runs. Treat the lessons as a framework for asking.</li>
+</ul>
+
+<h2>Primary sources</h2>
+<p><a href="https://www.rabbitmq.com/tutorials/amqp-concepts">AMQP 0-9-1 Model Explained</a> &middot; <a href="https://www.rabbitmq.com/docs/confirms">Acknowledgements and Confirms</a> &middot; <a href="https://www.rabbitmq.com/docs/dlx">Dead Letter Exchanges</a> &middot; <a href="https://laravel.com/docs/queues">Laravel: Queues</a> &middot; <a href="https://packagist.org/packages/vladimir-yuldashev/laravel-queue-rabbitmq">Driver README</a></p>
+<p>Last-minute review: <a href="../reference/interview-cheatsheet.html">Interview cheat sheet</a>.</p>
+<p class="note">Anything unclear? Ask your teacher, for example for a mock interview: "ask me five questions and push back on my answers."</p>
+<nav class="lesson-nav" data-lesson-nav></nav>
+</main>
+<script src="../assets/lessons.js"></script>
+<script src="../assets/course.js"></script>
+</body></html>
